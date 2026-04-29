@@ -125,6 +125,41 @@ async function findResponsablesInDataLab(nombres: string[]): Promise<string[]> {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🔄 Helper: Buscar microorganismo en DataLab por nombre
+// El microorganismId del request es de Sirius Product Core (otra base),
+// pero el campo "Microorganismos" en Inoculación enlaza a la tabla local de DataLab.
+// ═══════════════════════════════════════════════════════════════════════════════
+async function findMicroorganismoInDataLab(nombre: string): Promise<string | null> {
+  const microTableId = process.env.AIRTABLE_TABLE_MICROORGANISMOS;
+
+  if (!microTableId || !nombre) {
+    console.log('⚠️ No hay tabla de microorganismos o nombre vacío');
+    return null;
+  }
+
+  try {
+    const nombreEscaped = nombre.replace(/'/g, "\\'").trim();
+    const records = await base(microTableId)
+      .select({
+        filterByFormula: `LOWER(TRIM({Microorganismo})) = LOWER(TRIM('${nombreEscaped}'))`,
+        maxRecords: 1,
+      })
+      .firstPage();
+
+    if (records.length > 0) {
+      console.log(`✅ Microorganismo encontrado en DataLab: "${nombre}" -> ${records[0].id}`);
+      return records[0].id;
+    }
+
+    console.log(`⚠️ Microorganismo NO encontrado en DataLab: "${nombre}"`);
+    return null;
+  } catch (error) {
+    console.error('❌ Error buscando microorganismo en DataLab:', error);
+    return null;
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const rawData = await request.json();
@@ -195,6 +230,15 @@ export async function POST(request: NextRequest) {
     console.log('📦 Obteniendo código de producto para ID:', data.microorganismId);
     const codigoProductoCore = await getProductCodeFromProductCore(data.microorganismId || '');
     console.log('📋 Código de producto obtenido:', codigoProductoCore);
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 🔄 Buscar microorganismo en DataLab por nombre
+    // El microorganismId es de Sirius Product Core (otra base), pero el campo
+    // "Microorganismos" en Inoculación enlaza a la tabla local de DataLab.
+    // ═══════════════════════════════════════════════════════════════════════════
+    const microorganismoIdDataLab = data.microorganism
+      ? await findMicroorganismoInDataLab(data.microorganism)
+      : null;
     
     // ═══════════════════════════════════════════════════════════════════════════
     // 🏷️ Generar código de lote: DDMMYYAB (fecha + abreviatura del microorganismo)
@@ -244,7 +288,7 @@ export async function POST(request: NextRequest) {
       [FIELD_REALIZA_REGISTRO]: data.registradoPor, // Text
       'ID Producto Core': codigoProductoCore || '', // Código del producto (ej: SIRIUS-PRODUCT-0004)
       'Codigo Lote': codigoLote,
-      'Microorganismos': data.microorganismId ? [data.microorganismId] : [], // Linked record
+      'Microorganismos': microorganismoIdDataLab ? [microorganismoIdDataLab] : [], // Linked record (DataLab)
     };
     
     // Solo agregar responsables si encontramos IDs válidos en DataLab

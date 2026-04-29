@@ -33,9 +33,14 @@ export async function GET(request: NextRequest) {
     
     if (microorganismo) {
       // Filtrar por microorganismo si se especifica
-      const safeOrganism = microorganismo.replace(/['"]/g, '');
+      // Limpiar sufijos como " (L)" o " (S)" que vienen del Nombre Comercial de Sirius Product Core
+      // (la tabla de DataLab guarda solo el nombre científico sin la unidad)
+      const safeOrganism = microorganismo
+        .replace(/\s*\([^)]*\)\s*$/, '') // quitar "(L)", "(S)", etc. al final
+        .replace(/['"]/g, '')
+        .trim();
       filterFormula = `AND({Total Cantidad Bolsas en Stock} > 0, SEARCH("${safeOrganism}", ARRAYJOIN({Microorganismo (from Microorganismos)}, " ")))`;
-      console.log('🔬 Filtrado por microorganismo:', safeOrganism);
+      console.log('🔬 Filtrado por microorganismo (normalizado):', safeOrganism);
     }
 
     console.log('📋 Fórmula de filtro:', filterFormula);
