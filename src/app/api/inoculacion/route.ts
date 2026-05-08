@@ -126,33 +126,34 @@ async function findResponsablesInDataLab(nombres: string[]): Promise<string[]> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 🔄 Helper: Buscar microorganismo en DataLab por nombre
-// El microorganismId del request es de Sirius Product Core (otra base),
-// pero el campo "Microorganismos" en Inoculación enlaza a la tabla local de DataLab.
+// 🔄 Helper: Buscar microorganismo en DataLab por código de producto (ID Producto)
+// Los nombres de Sirius Product Core tienen sufijos como "(L)" que no coinciden
+// con los nombres en DataLab. Usamos {ID Producto} que es confiable en ambas bases.
 // ═══════════════════════════════════════════════════════════════════════════════
-async function findMicroorganismoInDataLab(nombre: string): Promise<string | null> {
+async function findMicroorganismoInDataLab(codigoProducto: string): Promise<string | null> {
   const microTableId = process.env.AIRTABLE_TABLE_MICROORGANISMOS;
 
-  if (!microTableId || !nombre) {
-    console.log('⚠️ No hay tabla de microorganismos o nombre vacío');
+  if (!microTableId || !codigoProducto) {
+    console.log('⚠️ No hay tabla de microorganismos o código vacío');
     return null;
   }
 
   try {
-    const nombreEscaped = nombre.replace(/'/g, "\\'").trim();
+    const safeCode = codigoProducto.replace(/'/g, "\\'");
     const records = await base(microTableId)
       .select({
-        filterByFormula: `LOWER(TRIM({Microorganismo})) = LOWER(TRIM('${nombreEscaped}'))`,
+        fields: ['ID Producto'],
+        filterByFormula: `{ID Producto} = '${safeCode}'`,
         maxRecords: 1,
       })
-      .firstPage();
+      .all();
 
     if (records.length > 0) {
-      console.log(`✅ Microorganismo encontrado en DataLab: "${nombre}" -> ${records[0].id}`);
+      console.log(`✅ Microorganismo encontrado en DataLab por ID Producto: "${codigoProducto}" -> ${records[0].id}`);
       return records[0].id;
     }
 
-    console.log(`⚠️ Microorganismo NO encontrado en DataLab: "${nombre}"`);
+    console.log(`⚠️ Microorganismo NO encontrado en DataLab para código: "${codigoProducto}"`);
     return null;
   } catch (error) {
     console.error('❌ Error buscando microorganismo en DataLab:', error);
@@ -232,12 +233,11 @@ export async function POST(request: NextRequest) {
     console.log('📋 Código de producto obtenido:', codigoProductoCore);
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // 🔄 Buscar microorganismo en DataLab por nombre
-    // El microorganismId es de Sirius Product Core (otra base), pero el campo
-    // "Microorganismos" en Inoculación enlaza a la tabla local de DataLab.
+    // 🔄 Buscar microorganismo en DataLab por código de producto
+    // Usamos el código SIRIUS-PRODUCT-XXXX (confiable) en lugar del nombre
     // ═══════════════════════════════════════════════════════════════════════════
-    const microorganismoIdDataLab = data.microorganism
-      ? await findMicroorganismoInDataLab(data.microorganism)
+    const microorganismoIdDataLab = codigoProductoCore
+      ? await findMicroorganismoInDataLab(codigoProductoCore)
       : null;
     
     // ═══════════════════════════════════════════════════════════════════════════

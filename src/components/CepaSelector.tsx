@@ -125,11 +125,15 @@ const CepaSelector = ({
     
     if (!cepa || !cantidad || cantidad <= 0) return;
 
+    // Abreviatura: usar lookup de la cepa, con fallback a la abreviatura del microorganismo seleccionado
+    const rawAbreviatura = Array.isArray(cepa.abreviatura) ? cepa.abreviatura[0] : cepa.abreviatura;
+    const abreviatura = rawAbreviatura || abreviaturaSeleccionada || '';
+
     const cepaData: CepaSeleccionada = {
       cepaId: cepa.id,
       cantidad: cantidad,
       microorganismo: Array.isArray(cepa.microorganismo) ? cepa.microorganismo[0] : cepa.microorganismo,
-      abreviatura: Array.isArray(cepa.abreviatura) ? cepa.abreviatura[0] : cepa.abreviatura,
+      abreviatura,
       codigoCepa: cepa.codigoCepa,
       totalDisponible: cepa.totalCantidadBolsas
     };

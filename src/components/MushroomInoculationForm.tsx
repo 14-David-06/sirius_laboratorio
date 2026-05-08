@@ -899,6 +899,7 @@ const MushroomInoculationForm = () => {
               <CepaSelector
                 microorganismoSeleccionado={formData.microorganism}
                 idProductCore={formData.codigoProducto}
+                abreviaturaSeleccionada={formData.microorganismAbreviatura}
                 onCepaAgregada={handleCepaAgregada}
                 onCepaRemovida={handleRemoverCepa}
                 cepasAgregadas={formData.cepasSeleccionadas}

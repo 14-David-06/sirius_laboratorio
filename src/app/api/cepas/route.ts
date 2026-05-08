@@ -47,6 +47,42 @@ async function getProductCodeFromProductCore(recordId: string): Promise<string |
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// 🔄 Helper: Buscar record ID de Microorganismo en DataLab por código de producto
+// ═══════════════════════════════════════════════════════════════════════════════
+async function findMicroorganismoIdByProductCode(codigoProducto: string): Promise<string | null> {
+  const microorganismosTableId = process.env.AIRTABLE_TABLE_MICROORGANISMOS;
+
+  if (!microorganismosTableId || !codigoProducto) {
+    console.log('⚠️ No se puede buscar microorganismo: configuración faltante');
+    return null;
+  }
+
+  try {
+    console.log(`🔍 Buscando microorganismo en DataLab para producto: ${codigoProducto}`);
+    // Escapar comillas simples para evitar inyección en fórmulas Airtable
+    const safeCode = codigoProducto.replace(/'/g, "\\'");
+    const records = await base(microorganismosTableId)
+      .select({
+        fields: ['ID Producto'],
+        filterByFormula: `{ID Producto} = '${safeCode}'`,
+        maxRecords: 1,
+      })
+      .all();
+
+    if (records.length > 0) {
+      console.log(`✅ Microorganismo DataLab encontrado: ${records[0].id} para ${codigoProducto}`);
+      return records[0].id;
+    } else {
+      console.log(`⚠️ Microorganismo no encontrado en DataLab para código: ${codigoProducto}`);
+      return null;
+    }
+  } catch (error) {
+    console.error('❌ Error buscando microorganismo en DataLab:', error);
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // 🔄 Helper: Buscar responsables en DataLab por nombre
 // ═══════════════════════════════════════════════════════════════════════════════
 async function findResponsablesInDataLab(nombres: string[]): Promise<string[]> {
@@ -175,6 +211,13 @@ export async function POST(request: NextRequest) {
     console.log('📋 Código de producto obtenido:', codigoProductoCore);
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // 🔄 Buscar record ID del Microorganismo en DataLab (para linked record)
+    // ═══════════════════════════════════════════════════════════════════════════
+    const microorganismoDataLabId = codigoProductoCore
+      ? await findMicroorganismoIdByProductCode(codigoProductoCore)
+      : null;
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // 🏷️ Generar código de cepa: DDMMYYAB (fecha + abreviatura del microorganismo)
     // ═══════════════════════════════════════════════════════════════════════════
     let codigoCepa = '';
@@ -210,16 +253,20 @@ export async function POST(request: NextRequest) {
       'Codigo Cepa Core': codigoCepa,
     };
 
+    // Vincular el registro de Microorganismo en DataLab (para lookups y fórmula Codigo Cepa)
+    if (microorganismoDataLabId) {
+      fieldsToCreate['Microorganismos'] = [microorganismoDataLabId];
+      console.log(`🔗 Microorganismo vinculado: ${microorganismoDataLabId}`);
+    } else {
+      console.log('⚠️ No se pudo vincular Microorganismo en DataLab');
+    }
+
     // Solo agregar responsables si encontramos IDs válidos en DataLab
     if (responsablesIdsDataLab.length > 0) {
       fieldsToCreate['Responsables'] = responsablesIdsDataLab;
     } else {
       console.log('⚠️ No se encontraron responsables en DataLab, guardando sin linked records');
     }
-
-    // NOTA: El campo Microorganismos sigue vinculado a DataLab (no migrado aún)
-    // Por ahora no enviamos este linked record ya que los IDs son de Sirius Product Core
-    // Si necesitas mantener compatibilidad, deberás crear un helper similar a findResponsablesInDataLab
 
     // Crear registro en Airtable
     const record = await base(tableId).create([{ fields: fieldsToCreate }]);
