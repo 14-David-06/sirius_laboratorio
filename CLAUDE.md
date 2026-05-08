@@ -163,6 +163,71 @@ src/
 - Reportes análisis
 - Bitácora eventos
 
+## Patrones Airtable — Linked Records entre Bases
+
+### Puente entre Sirius Product Core y DataLab
+
+DataLab maneja **dos bases de Airtable distintas**: la base principal de DataLab (`appUnQeSFnwx04Axi`) y Sirius Product Core (`app3Ee3rhDFbVlNXm`). Los IDs de registro (`recXXXXXX`) son únicos por base y **no son intercambiables** como linked records entre bases.
+
+**Campo puente**: `ID Producto` (ej. `SIRIUS-PRODUCT-0004`) es un campo de texto que existe en ambas bases y permite sincronizar referencias.
+
+**Patrón correcto para crear un linked record a `Microorganismos` en DataLab:**
+```typescript
+// ❌ INCORRECTO: usar el recId de Sirius Product Core directamente
+fieldsToCreate['Microorganismos'] = [data.microorganismoId]; // recId de otra base
+
+// ✅ CORRECTO: buscar el recId equivalente en DataLab por ID Producto
+async function findMicroorganismoIdByProductCode(codigoProducto: string): Promise<string | null> {
+  const records = await base(process.env.AIRTABLE_TABLE_MICROORGANISMOS!)
+    .select({
+      fields: ['ID Producto'],
+      filterByFormula: `{ID Producto} = '${codigoProducto.replace(/'/g, "\\'")}'`,
+      maxRecords: 1,
+    }).all();
+  return records.length > 0 ? records[0].id : null;
+}
+
+const microorganismoDataLabId = await findMicroorganismoIdByProductCode(codigoProductoCore);
+if (microorganismoDataLabId) {
+  fieldsToCreate['Microorganismos'] = [microorganismoDataLabId];
+}
+```
+
+Este patrón aplica a **cualquier tabla de DataLab** que tenga un linked record apuntando a `Microorganismos`.
+
+### Lookup fields dependen del linked record
+
+Los campos calculados en Airtable (`Abreviatura Hongo`, `Abreviatura`, `Microorganismo`, `Codigo Cepa`, `Codigo Lote`) son **lookup/formula fields** que requieren que el linked record `Microorganismos` esté seteado. Si el linked record está vacío, estos campos retornan `null`/`undefined`, lo que puede causar:
+- Campos `Codigo Lote` con valor `N/A` en la UI
+- Errores de validación Zod en el frontend (campo requerido enviado como `undefined`)
+
+## Bugs Resueltos (Referencia)
+
+### Bug 1 — Código de Lote N/A en Cepas de Hongos
+**Fecha**: 2026-05-08  
+**Archivos afectados**: `src/app/api/cepas/route.ts`  
+**Causa raíz**: El handler POST de cepas nunca guardaba el campo `Microorganismos` (linked record). El ID disponible en la request (`data.microorganismoId`) era un `recId` de Sirius Product Core, no de DataLab, por lo que no se podía usar directamente.  
+**Síntoma**: Campo `Codigo Lote` mostraba `N/A` en todas las cepas de hongos recién creadas.  
+**Solución**: Se agregó el helper `findMicroorganismoIdByProductCode(codigoProducto)` que busca en la tabla `Microorganismos` de DataLab usando el campo `{ID Producto}` como puente, y se asigna el resultado a `fieldsToCreate['Microorganismos']`.
+
+### Bug 2 — Error `❌ ERROR EN RESPUESTA: {}` al enviar Inoculación
+**Fecha**: 2026-05-08  
+**Archivos afectados**:
+- `src/app/api/inoculacion/route.ts`
+- `src/components/MushroomInoculationForm.tsx`
+- `src/components/CepaSelector.tsx`
+
+**Causa raíz (multi-capa)**:
+
+1. **API** — `findMicroorganismoInDataLab` buscaba por nombre del microorganismo. Los nombres en Sirius Product Core incluyen sufijo `(L)` (ej. "Beauveria bassiana (L)") mientras que en DataLab son sin sufijo ("Beauveria bassiana"). La búsqueda siempre retornaba `null` → `Microorganismos: []` → campo `Abreviatura` lookup vacío en los registros de inoculación.
+
+2. **Frontend** — `CepaSelector` no recibía el prop `abreviaturaSeleccionada`. Para cepas antiguas (creadas antes del fix del Bug 1), el lookup `Abreviatura Hongo` es `undefined`. Al serializar con `JSON.stringify`, la propiedad se omitía → Zod retornaba error "Required" para `cepasSeleccionadas[].abreviatura` → API respondía 400 → Next.js mostraba el cuerpo colapsado como `{}`.
+
+**Soluciones aplicadas**:
+- `inoculacion/route.ts`: `findMicroorganismoInDataLab` ahora busca por `{ID Producto}` en vez de por nombre (mismo patrón del Bug 1).
+- `MushroomInoculationForm.tsx`: Se pasa `abreviaturaSeleccionada={formData.microorganismAbreviatura}` al `CepaSelector`.
+- `CepaSelector.tsx`: En `handleAgregarCepa`, la abreviatura usa fallback: `rawAbreviatura || abreviaturaSeleccionada || ''`, cubriendo cepas antiguas sin linked record.
+
 ## Verificación de Cambios
 
 Después de cada cambio:
@@ -182,5 +247,5 @@ npx vitest run       # Tests pasan (si existen)
 
 ---
 
-**Última actualización**: 2025-03-18
+**Última actualización**: 2026-05-08
 **Mantenido por**: DataLab Development Team
