@@ -29,7 +29,8 @@ export async function POST(request: NextRequest) {
     const { 
       remisionId,
       receptorNombre,
-      receptorCedula
+      receptorCedula,
+      receptorEmail
     } = body;
 
     console.log('📝 Firmando remisión:', remisionId, 'Receptor:', receptorNombre || '(auto-lookup por cédula)');
@@ -106,6 +107,7 @@ export async function POST(request: NextRequest) {
       nombreCompleto: nombreFinal,
       cedula: receptorCedula,
       tipo: 'Receptor',
+      correo: receptorEmail || undefined,
     });
 
     const personasActuales = remisionRecord.get('Personas') as string[] || [];

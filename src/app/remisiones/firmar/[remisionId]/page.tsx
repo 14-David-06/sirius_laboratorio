@@ -53,6 +53,13 @@ export default function FirmarRemisionPage() {
   const [exitoso, setExitoso] = useState(false);
   const [urlDocumento, setUrlDocumento] = useState<string | null>(null);
 
+  // Estado para registro de persona nueva
+  const [modoRegistro, setModoRegistro] = useState(false);
+  const [nuevaNombre, setNuevaNombre] = useState('');
+  const [nuevaCorreo, setNuevaCorreo] = useState('');
+  const [autorizaDatos, setAutorizaDatos] = useState(false);
+  const [errorRegistro, setErrorRegistro] = useState('');
+
   useEffect(() => {
     if (remisionId) {
       cargarRemision();
@@ -105,8 +112,9 @@ export default function FirmarRemisionPage() {
           return;
         }
       }
-      // No encontrado como Receptor
-      setErrorCedula('Esta cédula no está registrada como Receptor autorizado. Contacte al remitente.');
+      // No encontrado → mostrar formulario de registro
+      setModoRegistro(true);
+      setErrorCedula('');
     } catch (err) {
       console.error('Error validando cédula:', err);
       setErrorCedula('Error de conexión al validar. Intente de nuevo.');
@@ -140,6 +148,57 @@ export default function FirmarRemisionPage() {
         if (data.remision?.urlDocumento) {
           setUrlDocumento(data.remision.urlDocumento);
           // Abrir automáticamente en nueva pestaña después de 2s
+          setTimeout(() => {
+            window.open(data.remision.urlDocumento, '_blank');
+          }, 2000);
+        }
+      } else {
+        setError(data.error || 'Error al firmar la remisión');
+      }
+    } catch (err) {
+      setError('Error de conexión al firmar');
+      console.error(err);
+    } finally {
+      setFirmando(false);
+    }
+  };
+
+  const handleRegistrarYFirmar = async () => {
+    const nombre = nuevaNombre.trim();
+    const correo = nuevaCorreo.trim();
+
+    if (!nombre) { setErrorRegistro('El nombre completo es obligatorio'); return; }
+    if (!correo || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) {
+      setErrorRegistro('Ingrese un correo electrónico válido');
+      return;
+    }
+    if (!autorizaDatos) {
+      setErrorRegistro('Debe autorizar el tratamiento de datos para continuar');
+      return;
+    }
+
+    try {
+      setFirmando(true);
+      setError('');
+      setErrorRegistro('');
+
+      const response = await fetch('/api/remisiones/firmar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          remisionId,
+          receptorCedula: receptorCedula.trim(),
+          receptorNombre: nombre,
+          receptorEmail: correo,
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setExitoso(true);
+        if (data.remision?.urlDocumento) {
+          setUrlDocumento(data.remision.urlDocumento);
           setTimeout(() => {
             window.open(data.remision.urlDocumento, '_blank');
           }, 2000);
@@ -398,7 +457,7 @@ export default function FirmarRemisionPage() {
           )}
 
           {/* Paso 1: Validar cédula */}
-          {!personaValidada ? (
+          {!personaValidada && !modoRegistro && (
             <div>
               <p className="text-blue-200/70 text-sm mb-4">
                 Ingrese su cédula para validar su identidad como receptor autorizado.
@@ -447,8 +506,102 @@ export default function FirmarRemisionPage() {
                 )}
               </button>
             </div>
-          ) : (
-            /* Paso 2: Identidad validada → Confirmar recepción */
+          )}
+
+          {/* Paso 1b: Registrar persona nueva */}
+          {!personaValidada && modoRegistro && (
+            <div>
+              <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 mb-4">
+                <p className="text-blue-300 text-sm">
+                  ℹ️ La cédula <strong className="text-white">{receptorCedula}</strong> no está registrada. Complete sus datos para continuar.
+                </p>
+              </div>
+
+              {errorRegistro && (
+                <div className="bg-red-500/20 border border-red-500 rounded-lg p-3 mb-4">
+                  <p className="text-red-300 text-sm">⚠️ {errorRegistro}</p>
+                </div>
+              )}
+
+              <div className="mb-4">
+                <label className="block text-blue-200 text-sm font-medium mb-2">
+                  Nombre Completo *
+                </label>
+                <input
+                  type="text"
+                  value={nuevaNombre}
+                  onChange={(e) => { setNuevaNombre(e.target.value); setErrorRegistro(''); }}
+                  className="w-full px-4 py-3 bg-black/30 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Ingrese su nombre completo"
+                  autoComplete="name"
+                />
+              </div>
+
+              <div className="mb-5">
+                <label className="block text-blue-200 text-sm font-medium mb-2">
+                  Correo Electrónico *
+                </label>
+                <input
+                  type="email"
+                  value={nuevaCorreo}
+                  onChange={(e) => { setNuevaCorreo(e.target.value); setErrorRegistro(''); }}
+                  className="w-full px-4 py-3 bg-black/30 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="correo@ejemplo.com"
+                  autoComplete="email"
+                  inputMode="email"
+                />
+                <p className="text-blue-300/50 text-xs mt-1">Se enviará una copia de la remisión a este correo.</p>
+              </div>
+
+              <div className="mb-5 bg-white/5 border border-white/10 rounded-lg p-4">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autorizaDatos}
+                    onChange={(e) => { setAutorizaDatos(e.target.checked); setErrorRegistro(''); }}
+                    className="mt-0.5 w-5 h-5 rounded accent-blue-500 flex-shrink-0"
+                  />
+                  <span className="text-blue-200/80 text-xs leading-relaxed">
+                    Autorizo el tratamiento de mis datos personales (nombre, cédula y correo electrónico) por parte de{' '}
+                    <strong className="text-white">Sirius Regenerative Solutions S.A.S ZOMAC</strong> con la finalidad de gestionar la recepción de remisiones, de conformidad con la{' '}
+                    <strong className="text-white">Ley 1581 de 2012</strong> y el Decreto 1377 de 2013 sobre protección de datos personales en Colombia. *
+                  </span>
+                </label>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setModoRegistro(false); setErrorCedula(''); setErrorRegistro(''); }}
+                  className="flex-1 bg-white/10 hover:bg-white/20 text-white font-medium py-3 px-4 rounded-lg transition-all duration-200"
+                >
+                  ← Volver
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRegistrarYFirmar}
+                  disabled={firmando}
+                  className="flex-[2] bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 flex items-center justify-center gap-2"
+                >
+                  {firmando ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
+                      Procesando...
+                    </>
+                  ) : (
+                    <>✓ Confirmar Recepción</>
+                  )}
+                </button>
+              </div>
+
+              <p className="text-blue-200/60 text-xs mt-3 text-center">
+                Al firmar, confirma que ha recibido los productos listados en buen estado
+              </p>
+            </div>
+          )}
+
+          {/* Paso 2: Identidad validada → Confirmar recepción */}
+          {personaValidada && (
             <div>
               {/* Persona validada */}
               <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 mb-4">
@@ -468,7 +621,16 @@ export default function FirmarRemisionPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => { setPersonaValidada(null); setReceptorCedula(''); setErrorCedula(''); }}
+                  onClick={() => {
+                    setPersonaValidada(null);
+                    setReceptorCedula('');
+                    setErrorCedula('');
+                    setModoRegistro(false);
+                    setNuevaNombre('');
+                    setNuevaCorreo('');
+                    setAutorizaDatos(false);
+                    setErrorRegistro('');
+                  }}
                   className="text-blue-300 text-xs mt-2 hover:underline"
                 >
                   ← Cambiar cédula
