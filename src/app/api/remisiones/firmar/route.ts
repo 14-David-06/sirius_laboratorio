@@ -290,6 +290,35 @@ export async function POST(request: NextRequest) {
         clienteRecordId = clienteRecordsForEmail[0].id;
       }
 
+      // 8a-bis. Registrar al receptor como personal del cliente si no existe aún
+      if (clienteRecordId) {
+        try {
+          const yaEsPersonal = await baseClientCore(SIRIUS_CLIENT_CORE_CONFIG.TABLES.PERSONAL_CLIENTE)
+            .select({
+              filterByFormula: `{Cedula} = "${receptorCedula}"`,
+              maxRecords: 1,
+            })
+            .firstPage();
+
+          if (yaEsPersonal.length === 0) {
+            const nuevoPersonal: Record<string, unknown> = {
+              'Nombre Completo': nombreFinal,
+              'Cedula': receptorCedula,
+              'Cliente': [clienteRecordId],
+              'Estado Personal': 'Activo',
+            };
+            if (receptorEmail) nuevoPersonal['Email Notificacion'] = receptorEmail;
+
+            await baseClientCore(SIRIUS_CLIENT_CORE_CONFIG.TABLES.PERSONAL_CLIENTE).create(nuevoPersonal);
+            console.log('✅ Receptor registrado como personal del cliente:', nombreFinal, '→', idCliente);
+          } else {
+            console.log('ℹ️ Receptor ya existe como personal del cliente, omitiendo creación');
+          }
+        } catch (personalError) {
+          console.warn('⚠️ No se pudo registrar receptor como personal del cliente:', personalError);
+        }
+      }
+
       // 8b. Obtener personal activo del cliente
       const emailsUnicos: Set<string> = new Set();
       
@@ -334,6 +363,11 @@ export async function POST(request: NextRequest) {
             emailsUnicos.add(email.trim().toLowerCase());
           }
         });
+      }
+
+      // Incluir correo del receptor de esta firma (aunque aún no aparezca en la query por eventual consistency)
+      if (receptorEmail && receptorEmail.trim()) {
+        emailsUnicos.add(receptorEmail.trim().toLowerCase());
       }
 
       // 8c. Preparar CC corporativos fijos
