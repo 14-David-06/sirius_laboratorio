@@ -301,15 +301,15 @@ export async function POST(request: NextRequest) {
             .firstPage();
 
           if (yaEsPersonal.length === 0) {
-            const nuevoPersonal: Record<string, unknown> = {
+            const nuevoPersonal = {
               'Nombre Completo': nombreFinal,
               'Cedula': receptorCedula,
               'Cliente': [clienteRecordId],
               'Estado Personal': 'Activo',
+              ...(receptorEmail ? { 'Email Notificacion': receptorEmail } : {}),
             };
-            if (receptorEmail) nuevoPersonal['Email Notificacion'] = receptorEmail;
 
-            await baseClientCore(SIRIUS_CLIENT_CORE_CONFIG.TABLES.PERSONAL_CLIENTE).create(nuevoPersonal);
+            await baseClientCore(SIRIUS_CLIENT_CORE_CONFIG.TABLES.PERSONAL_CLIENTE).create(nuevoPersonal as any);
             console.log('✅ Receptor registrado como personal del cliente:', nombreFinal, '→', idCliente);
           } else {
             console.log('ℹ️ Receptor ya existe como personal del cliente, omitiendo creación');

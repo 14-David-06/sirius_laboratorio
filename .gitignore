@@ -48,3 +48,4 @@ docs/actas/
 docs/README-Acta-Generator.md
 scripts/generate-acta.js
 scripts/open-acta.js
+/docs
